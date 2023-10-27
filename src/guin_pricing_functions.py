@@ -20,6 +20,15 @@ def get_guindex_pint_data(county, years):
     return pints_df
 
 
+def get_guindex_pub_data(county):
+    """Use the guindex package to get the pints submitted for a chosen county
+    within the years specified."""
+
+    pubs_df = guindex.pubs(county=county)
+
+    return pubs_df
+
+
 def load_prepare_shapefiles(shapefile_path, code_name_mapping, projection):
     """Loads in the shapefile with the postal regions and selects the codes
     that correspond to Dublin regions and adds nice names for them. Converts
@@ -44,14 +53,14 @@ def load_prepare_shapefiles(shapefile_path, code_name_mapping, projection):
     return shp
 
 
-def sort_pubs_into_postal_regions(pub_info_df, postal_region_shapes):
+def sort_pubs_into_postal_regions(pubs_df, postal_region_shapes):
     """Takes an input with all of the unique pubs that have had had pints
     submitted and uses their latitude and longitude to determine what postal
     region they are in from the shapefiles."""
 
-    pub_info_df["postal_region"] = np.nan
-    for idx, pub_info in pub_info_df.iterrows():
-        pub_point = Point(pub_info["longitude"], pub_info["latitude"])
+    pubs_df["postal_region"] = np.nan
+    for idx, pub in pubs_df.iterrows():
+        pub_point = Point(pub["longitude"], pub["latitude"])
         postal_region = postal_region_shapes.loc[
             postal_region_shapes["geometry"].contains(pub_point), "name"
         ].squeeze()
@@ -59,9 +68,9 @@ def sort_pubs_into_postal_regions(pub_info_df, postal_region_shapes):
         if not isinstance(postal_region, str):
             postal_region = np.nan
 
-        pub_info_df.loc[idx, "postal_region"] = postal_region
+        pubs_df.loc[idx, "postal_region"] = postal_region
 
-    return pub_info_df
+    return pubs_df
 
 
 def pints_ridgeline(pints_df, order, save_dir, save_name):
@@ -102,10 +111,25 @@ def pints_ridgeline(pints_df, order, save_dir, save_name):
 
 
 def choropleth_map(
-    postal_region_shapes, column, cmap, cmap_label, save_dir, save_name
+    postal_region_shapes, column, labels, cmap, cmap_label, save_dir, save_name
 ):
+    """Function to create a choropleth map from the shapefiles."""
     fig, ax = plt.subplots()
 
+    # Add option to annotate each of the postal regions with the name of the
+    # region.
+    if labels:
+        postal_region_shapes["short_name"] = postal_region_shapes[
+            "name"
+        ].str.replace("Dublin ", "D")
+        postal_region_shapes["label_coords"] = postal_region_shapes[
+            "geometry"
+        ].apply(lambda x: x.representative_point().coords[:])
+        postal_region_shapes["label_coords"] = [
+            coords[0] for coords in postal_region_shapes["label_coords"]
+        ]
+
+    # Plot the choropleth map.
     postal_region_shapes.plot(
         column=column,
         ax=ax,
@@ -116,6 +140,17 @@ def choropleth_map(
         missing_kwds={"color": "lightgray", "edgecolor": "black"},
     )
     ax.set_axis_off()
+
+    # Add labels.
+    if labels:
+        for idx, row in postal_region_shapes.iterrows():
+            plt.annotate(
+                text=row["short_name"],
+                xy=row["label_coords"],
+                horizontalalignment="center",
+                verticalalignment="center",
+                fontsize=8,
+            )
 
     fig.savefig(save_dir + save_name, bbox_inches="tight")
 
